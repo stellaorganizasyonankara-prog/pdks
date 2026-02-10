@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="tr" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Next Level - PDKS Stabil</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        .card-inner { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); }
+        .bg-main { background-color: #020617; background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 24px 24px; }
+        .tab-active { border-bottom: 4px solid #10b981; color: #10b981; }
+        @keyframes pop { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .animate-pop { animation: pop 0.3s ease-out; }
+    </style>
+</head>
+<body class="h-full bg-slate-50 font-sans">
+
+    <div id="login-screen" class="h-full bg-main flex items-center justify-center p-4">
+        <div class="max-w-md w-full">
+            <div class="text-center mb-8">
+                <h1 class="text-5xl font-black text-white italic tracking-tighter">NEXT LEVEL</h1>
+                <p class="text-emerald-400 font-bold text-[10px] uppercase tracking-[0.3em] mt-2">Güvenli PDKS Sistemi</p>
+            </div>
+            <div class="bg-white/5 backdrop-blur-2xl p-8 rounded-[2.5rem] border border-white/10 shadow-2xl">
+                <form id="gate-form" class="space-y-4">
+                    <input type="text" id="access-id" placeholder="8 HANELİ ID" maxlength="8" required class="w-full p-5 rounded-2xl bg-black/40 text-white text-center text-2xl font-mono border border-white/5 outline-none focus:border-emerald-500 transition-all">
+                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest transition-all">Giriş Yap</button>
+                </form>
+                <div class="mt-8 flex justify-between border-t border-white/5 pt-6">
+                    <button onclick="tryAuth('admin')" class="text-slate-500 hover:text-emerald-400 text-[10px] font-black uppercase">⚙️ Yönetici</button>
+                    <button onclick="tryAuth('security')" class="text-slate-500 hover:text-emerald-400 text-[10px] font-black uppercase">🛡️ Güvenlik</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="dynamic-content" class="hidden min-h-full flex flex-col"></div>
+
+    <script>
+        let db = JSON.parse(localStorage.getItem('next_level_v6')) || [];
+        let logs = JSON.parse(localStorage.getItem('next_level_logs_v6')) || [];
+        let currentTab = 'stats';
+        let isScanning = false; // Mükerrer kaydı önleyen kilit değişkeni
+
+        const loginScreen = document.getElementById('login-screen');
+        const dynamicContent = document.getElementById('dynamic-content');
+
+        document.getElementById('gate-form').onsubmit = function(e) {
+            e.preventDefault();
+            const val = document.getElementById('access-id').value;
+            const person = db.find(u => u.id === val);
+            if (person) {
+                if(person.durum === 'pasif') alert("HATA: Personel pasif durumda!");
+                else renderPersonelView(person);
+            } else alert("GEÇERSİZ ID!");
+        };
+
+        // --- YÖNETİCİ PANELİ ---
+        function renderAdminView() {
+            loginScreen.style.display = 'none';
+            dynamicContent.classList.remove('hidden');
+            
+            dynamicContent.innerHTML = `
+                <div class="bg-white border-b shadow-sm sticky top-0 z-50">
+                    <div class="max-w-7xl mx-auto px-6 flex justify-between items-center h-20">
+                        <div class="flex space-x-6 h-full">
+                            <button onclick="switchTab('stats')" id="tab-stats" class="font-black text-[11px] uppercase tracking-widest h-full px-2">📊 Özet</button>
+                            <button onclick="switchTab('list')" id="tab-list" class="font-black text-[11px] uppercase tracking-widest h-full px-2">👥 Personeller (${db.length})</button>
+                            <button onclick="switchTab('add')" id="tab-add" class="font-black text-[11px] uppercase tracking-widest h-full px-2">➕ Yeni Kayıt</button>
+                            <button onclick="switchTab('logs')" id="tab-logs" class="font-black text-[11px] uppercase tracking-widest h-full px-2">📝 Girişler</button>
+                        </div>
+                        <button onclick="location.reload()" class="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase">Güvenli Çıkış</button>
+                    </div>
+                </div>
+                <div id="tab-content" class="max-w-7xl mx-auto p-6 flex-1"></div>
+            `;
+            switchTab(currentTab);
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            ['stats', 'list', 'add', 'logs'].forEach(t => {
+                const el = document.getElementById(`tab-${t}`);
+                if(el) el.className = t === tab ? "font-black text-[11px] uppercase tracking-widest h-full px-2 transition-all tab-active" : "font-black text-[11px] uppercase tracking-widest h-full px-2 transition-all text-slate-400";
+            });
+
+            const content = document.getElementById('tab-content');
+            
+            if (tab === 'stats') {
+                const today = new Date().toLocaleDateString('tr-TR');
+                const todayLogs = logs.filter(l => l.tarih === today).length;
+                content.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 animate-pop">
+                        <div class="bg-white p-8 rounded-[2.5rem] border shadow-sm">
+                            <p class="text-slate-400 text-[10px] font-black uppercase mb-2">Sistemdeki Personel</p>
+                            <p class="text-5xl font-black text-slate-800">${db.length}</p>
+                        </div>
+                        <div class="bg-emerald-500 p-8 rounded-[2.5rem] text-white shadow-xl shadow-emerald-100">
+                            <p class="text-white/70 text-[10px] font-black uppercase mb-2">Bugünkü Giriş Sayısı</p>
+                            <p class="text-5xl font-black">${todayLogs}</p>
+                        </div>
+                        <div class="bg-white p-8 rounded-[2.5rem] border shadow-sm">
+                            <p class="text-slate-400 text-[10px] font-black uppercase mb-2">Aktif Personel</p>
+                            <p class="text-5xl font-black text-emerald-600">${db.filter(u=>u.durum==='aktif').length}</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (tab === 'list') {
+                content.innerHTML = `
+                    <div class="bg-white rounded-[2.5rem] border shadow-sm overflow-hidden animate-pop">
+                        <div class="p-6 border-b bg-slate-50 flex justify-between items-center">
+                            <h3 class="font-black text-xs uppercase tracking-widest text-slate-500">Personel Yönetimi</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead>
+                                    <tr class="text-[10px] font-black uppercase text-slate-400 border-b">
+                                        <th class="p-6">Profil</th>
+                                        <th class="p-6">İsim Soyisim</th>
+                                        <th class="p-6">Mağaza / ID</th>
+                                        <th class="p-6 text-right">Durum Kontrol</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y">
+                                    ${db.map(u => `
+                                        <tr class="${u.durum === 'pasif' ? 'bg-red-50/30' : ''} transition-colors">
+                                            <td class="p-4"><img src="${u.foto}" class="w-12 h-12 rounded-xl object-cover border shadow-sm"></td>
+                                            <td class="p-4 font-black text-sm uppercase text-slate-700">${u.ad} ${u.soyad}</td>
+                                            <td class="p-4 uppercase font-bold text-xs text-slate-500">${u.magaza} <br> <span class="font-mono text-[10px] opacity-50">${u.id}</span></td>
+                                            <td class="p-4 text-right">
+                                                <button onclick="toggleUserStatus('${u.id}')" class="px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${u.durum === 'aktif' ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'}">
+                                                    ${u.durum === 'aktif' ? '🔴 Pasif Yap' : '🟢 Aktif Yap'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `).reverse().join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (tab === 'add') {
+                content.innerHTML = `
+                    <div class="max-w-md mx-auto bg-white p-10 rounded-[3rem] border shadow-sm animate-pop text-center">
+                        <h3 class="font-black text-xs uppercase tracking-widest text-slate-400 mb-8">Yeni Personel Tanımla</h3>
+                        <form id="admin-add-form" class="space-y-4">
+                            <div class="flex flex-col items-center mb-6">
+                                <div id="photo-preview" class="w-32 h-32 bg-slate-50 rounded-[2rem] mb-4 border-4 border-dashed border-slate-200 flex items-center justify-center text-[10px] font-black text-slate-300 uppercase">Fotoğraf Seç</div>
+                                <input type="file" id="in-foto" accept="image/*" class="text-xs" required>
+                            </div>
+                            <input type="text" id="in-ad" placeholder="AD" class="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required>
+                            <input type="text" id="in-soyad" placeholder="SOYAD" class="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required>
+                            <input type="text" id="in-magaza" placeholder="MAĞAZA ADI" class="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required>
+                            <button type="submit" class="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase shadow-xl hover:bg-black transition-all">Sisteme Kaydet</button>
+                        </form>
+                    </div>
+                `;
+                document.getElementById('in-foto').onchange = function(e) {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const preview = document.getElementById('photo-preview');
+                        preview.innerHTML = `<img src="${reader.result}" class="w-full h-full object-cover rounded-[1.8rem]">`;
+                        preview.dataset.base64 = reader.result;
+                    };
+                    reader.readAsDataURL(e.target.files[0]);
+                };
+                document.getElementById('admin-add-form').onsubmit = (e) => {
+                    e.preventDefault();
+                    const newUser = {
+                        id: Math.floor(10000000 + Math.random() * 90000000).toString(),
+                        ad: document.getElementById('in-ad').value,
+                        soyad: document.getElementById('in-soyad').value,
+                        magaza: document.getElementById('in-magaza').value,
+                        durum: 'aktif',
+                        foto: document.getElementById('photo-preview').dataset.base64
+                    };
+                    db.push(newUser);
+                    localStorage.setItem('next_level_v6', JSON.stringify(db));
+                    switchTab('list');
+                };
+            }
+
+            if (tab === 'logs') {
+                content.innerHTML = `
+                    <div class="bg-white rounded-[2.5rem] border shadow-sm p-8 animate-pop">
+                        <div class="flex justify-between items-center mb-8">
+                            <h3 class="font-black text-xs uppercase text-slate-400">Giriş Kayıtları</h3>
+                            <button onclick="clearLogs()" class="text-red-500 text-[10px] font-black uppercase">Listeyi Temizle</button>
+                        </div>
+                        <div class="space-y-3">
+                            ${logs.length === 0 ? '<p class="text-center text-slate-300 font-bold">Henüz kayıt yok.</p>' : 
+                            logs.map(l => `
+                                <div class="flex justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 items-center">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                                        <span class="font-black text-sm text-slate-700 uppercase">${l.isim}</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-[11px] font-black text-slate-400">${l.tarih}</div>
+                                        <div class="text-[10px] font-bold text-emerald-600 tracking-tighter">${l.saat}</div>
+                                    </div>
+                                </div>
+                            `).reverse().join('')}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function toggleUserStatus(id) {
+            const idx = db.findIndex(u => u.id === id);
+            db[idx].durum = db[idx].durum === 'aktif' ? 'pasif' : 'aktif';
+            localStorage.setItem('next_level_v6', JSON.stringify(db));
+            switchTab('list');
+        }
+
+        function clearLogs() {
+            if(confirm("Tüm giriş kayıtlarını silmek istediğinize emin misiniz?")) {
+                logs = [];
+                localStorage.setItem('next_level_logs_v6', JSON.stringify(logs));
+                switchTab('logs');
+            }
+        }
+
+        // --- GÜVENLİK GÖRÜNÜMÜ (TEK KAYIT KİLİTLİ) ---
+        function renderSecurityView() {
+            loginScreen.style.display = 'none';
+            dynamicContent.classList.remove('hidden');
+            dynamicContent.innerHTML = `
+                <div class="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6">
+                    <div class="bg-white p-10 rounded-[4rem] shadow-2xl max-w-lg w-full text-center border-8 border-white">
+                        <h2 class="text-2xl font-black mb-6 uppercase italic tracking-tighter">🛡️ Güvenlik Geçiş</h2>
+                        <div id="reader" class="mb-6 bg-black rounded-[2.5rem] overflow-hidden shadow-2xl"></div>
+                        
+                        <div id="scan-res" class="hidden p-10 rounded-[3rem] animate-pop text-white">
+                            <img id="res-foto" class="w-28 h-28 rounded-3xl mx-auto mb-6 object-cover border-4 border-white/30 shadow-xl">
+                            <h3 id="res-status" class="text-3xl font-black uppercase mb-2 tracking-tighter"></h3>
+                            <p id="res-name" class="font-bold text-xl uppercase opacity-90"></p>
+                        </div>
+
+                        <button onclick="location.reload()" class="mt-8 text-slate-300 font-black text-[10px] uppercase tracking-[0.2em] hover:text-red-500 transition-all">Sistemi Kapat</button>
+                    </div>
+                </div>
+            `;
+            startScanner();
+        }
+
+        function startScanner() {
+            html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 280 }, (decodedText) => {
+                // EĞER ŞU AN TARAMA KİLİDİ VARSA (4 SANİYE) DURDUR
+                if(isScanning) return; 
+
+                const found = db.find(u => u.id === decodedText);
+                const resDiv = document.getElementById('scan-res');
+                const readerDiv = document.getElementById('reader');
+
+                isScanning = true; // KİLİDİ AKTİF ET
+                readerDiv.classList.add('hidden');
+                resDiv.classList.remove('hidden');
+
+                if(found && found.durum === 'aktif') {
+                    resDiv.className = "p-10 rounded-[3rem] animate-pop text-white bg-emerald-500 shadow-2xl shadow-emerald-200";
+                    document.getElementById('res-status').innerText = "GEÇİŞ ONAYI";
+                    document.getElementById('res-foto').src = found.foto;
+                    document.getElementById('res-name').innerText = found.ad + " " + found.soyad;
+                    
+                    logs.push({
+                        isim: found.ad + " " + found.soyad,
+                        tarih: new Date().toLocaleDateString('tr-TR'),
+                        saat: new Date().toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'})
+                    });
+                    localStorage.setItem('next_level_logs_v6', JSON.stringify(logs));
+                } else {
+                    resDiv.className = "p-10 rounded-[3rem] animate-pop text-white bg-red-500 shadow-2xl shadow-red-200";
+                    document.getElementById('res-status').innerText = "GEÇİŞ REDDİ";
+                    document.getElementById('res-foto').src = found ? found.foto : "https://via.placeholder.com/150";
+                    document.getElementById('res-name').innerText = found ? "PERSONEL PASİF" : "GEÇERSİZ KOD";
+                }
+
+                // 4 Saniye sonra kilit kalkar ve kamera geri gelir
+                setTimeout(() => {
+                    resDiv.classList.add('hidden');
+                    readerDiv.classList.remove('hidden');
+                    isScanning = false; 
+                }, 4000);
+            });
+        }
+
+        // --- PERSONEL KARTI ---
+        function renderPersonelView(user) {
+            loginScreen.style.display = 'none';
+            dynamicContent.classList.remove('hidden');
+            dynamicContent.innerHTML = `
+                <div class="flex flex-col items-center justify-center min-h-screen bg-slate-900 p-6">
+                    <div class="w-full max-w-sm animate-pop">
+                        <div class="card-inner p-10 rounded-[3.5rem] shadow-2xl text-white border border-white/10">
+                            <div class="flex justify-between items-start mb-10">
+                                <img src="${user.foto}" class="w-24 h-24 rounded-[1.8rem] object-cover border-2 border-white/20">
+                                <div class="text-right">
+                                    <div class="text-[13px] font-black text-emerald-400 uppercase tracking-widest italic">Next Level</div>
+                                    <div class="text-[8px] font-bold opacity-30 uppercase tracking-[0.3em]">Authorized ID</div>
+                                </div>
+                            </div>
+                            <div class="mb-12">
+                                <h2 class="text-4xl font-black uppercase tracking-tighter leading-none">${user.ad}</h2>
+                                <h3 class="text-4xl font-light uppercase opacity-50 tracking-tighter leading-none">${user.soyad}</h3>
+                                <div class="mt-6 inline-block bg-emerald-500/20 text-emerald-400 text-[10px] px-5 py-2 rounded-full border border-emerald-400/20 font-black uppercase tracking-widest">${user.magaza}</div>
+                            </div>
+                            <div class="flex justify-between items-center pt-8 border-t border-white/5">
+                                <div><p class="text-[8px] opacity-30 font-black uppercase mb-1 tracking-widest">Digital ID</p><p class="text-2xl font-mono font-bold">${user.id}</p></div>
+                                <div id="qr-container" class="bg-white p-1 rounded-xl shadow-lg"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="location.reload()" class="mt-12 text-slate-500 font-black text-xs uppercase tracking-widest hover:text-white transition-all">← Güvenli Çıkış Yap</button>
+                </div>
+            `;
+            new QRCode(document.getElementById("qr-container"), { text: user.id, width: 75, height: 75 });
+        }
+
+        function tryAuth(type) {
+            const pass = prompt("Güvenlik Şifresi:");
+            if (type === 'admin' && pass === '1234') renderAdminView();
+            else if (type === 'security' && pass === '123456') renderSecurityView();
+            else if (pass !== null) alert("ŞİFRE HATALI!");
+        }
+    </script>
+</body>
+</html>
